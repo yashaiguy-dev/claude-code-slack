@@ -1,0 +1,27 @@
+# Environment (contains tokens — never commit)
+.env
+
+# Logs
+*.log
+bot.log
+audit.log
+stdout.log
+stderr.log
+
+# Session data
+.sessions.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
