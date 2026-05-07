@@ -6,8 +6,8 @@ Runs Claude Code CLI headless via Slack. Each thread = its own Claude session
 with full conversation memory, tool use, and file access.
 
 Supports TWO modes (user picks one):
-  A) Socket Mode   — no public URL, requires @mention in channels
-  B) Events API    — needs Cloudflare tunnel, reads all messages (no @mention)
+  A) Socket Mode   — no public URL, @mention once to start a thread, then just reply
+  B) Events API    — needs Cloudflare tunnel, reads all messages (no @mention at all)
 
 Features:
   - Per-thread serial queue (messages wait for prior run to finish)
@@ -266,6 +266,49 @@ def _is_duplicate_event(event_id: str) -> bool:
 
 def _dedup_key(event: dict) -> str:
     return event.get("client_msg_id") or f"{event.get('channel')}:{event.get('ts')}"
+
+
+# ---------------------------------------------------------------------------
+# Activated threads — @mention once activates the thread, replies auto-trigger
+# ---------------------------------------------------------------------------
+
+_activated_threads: set[str] = set()
+_activated_threads_lock = threading.Lock()
+ACTIVATED_THREADS_FILE = LOG_DIR / ".activated_threads.json"
+
+
+def _load_activated_threads() -> None:
+    try:
+        data = json.loads(ACTIVATED_THREADS_FILE.read_text())
+        with _activated_threads_lock:
+            _activated_threads.update(data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+
+def _activate_thread(channel: str, thread_ts: str) -> None:
+    key = f"{channel}:{thread_ts}"
+    with _activated_threads_lock:
+        _activated_threads.add(key)
+        items = list(_activated_threads)
+        if len(items) > MAX_SESSIONS:
+            items = items[-MAX_SESSIONS:]
+            _activated_threads.clear()
+            _activated_threads.update(items)
+    try:
+        ACTIVATED_THREADS_FILE.write_text(json.dumps(list(_activated_threads)))
+    except Exception:
+        pass
+
+
+def _is_bot_thread(channel: str, thread_ts: str) -> bool:
+    key = f"{channel}:{thread_ts}"
+    with _activated_threads_lock:
+        if key in _activated_threads:
+            return True
+    if _get_session(thread_ts):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -972,6 +1015,9 @@ if app is not None:
             log_unauthorized(event)
             say(text="I only respond to authorized users.", thread_ts=event.get("ts"))
             return
+        channel = event.get("channel", "")
+        thread_ts = event.get("thread_ts") or event.get("ts")
+        _activate_thread(channel, thread_ts)
         threading.Thread(target=process_message_async, args=(event,), daemon=True).start()
 
 
@@ -995,15 +1041,24 @@ if app is not None:
         channel_type = event.get("channel_type", "")
         is_dm = channel_type in ("im", "mpim")
 
-        # Socket Mode: only respond to DMs (channels need @mention)
-        # Events API: respond to DMs + all channel messages
-        if not USE_EVENTS_API and not is_dm:
-            return
-
         if event.get("bot_id"):
             return
 
-        threading.Thread(target=process_message_async, args=(event,), daemon=True).start()
+        if is_dm:
+            threading.Thread(target=process_message_async, args=(event,), daemon=True).start()
+            return
+
+        if USE_EVENTS_API:
+            threading.Thread(target=process_message_async, args=(event,), daemon=True).start()
+            return
+
+        # Socket Mode channel message: only respond if it's a reply in an activated thread
+        raw_thread_ts = event.get("thread_ts")
+        if not raw_thread_ts:
+            return
+        channel = event.get("channel", "")
+        if _is_bot_thread(channel, raw_thread_ts):
+            threading.Thread(target=process_message_async, args=(event,), daemon=True).start()
 
 
     @app.event("member_joined_channel")
@@ -1164,6 +1219,7 @@ def main():
         raise SystemExit(1)
 
     _ensure_claude_cli_working()
+    _load_activated_threads()
 
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
     signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
@@ -1198,7 +1254,8 @@ def main():
             print("  Set it in .env or switch to Events API by setting SLACK_SIGNING_SECRET.", flush=True)
             sys.exit(1)
 
-        print(f"  @mention:     Required in channels, not in DMs", flush=True)
+        print(f"  @mention:     Once to start a thread, then just reply", flush=True)
+        print(f"  Threads:      {len(_activated_threads)} activated threads loaded", flush=True)
         print("", flush=True)
         print("  Bot is running! Send a message in Slack.", flush=True)
         print("", flush=True)

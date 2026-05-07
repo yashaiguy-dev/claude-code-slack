@@ -22,7 +22,8 @@ Reply + tool calls + generated files appear in your Slack thread
 - **Thread memory** — each Slack thread = its own Claude session with full context
 - **Tool mirroring** — see every file read, command run, grep search in Slack
 - **File upload/download** — attach files in Slack, Claude reads them. Generated files auto-upload back
-- **Two modes** — Socket Mode (easy, no server) or Events API (Cloudflare, no @mention)
+- **Two modes** — Socket Mode (recommended, easy) or Events API (Cloudflare tunnel)
+- **Smart threads** — @mention once to start, then just reply — bot auto-responds in activated threads
 - **Hot-reload config** — change model/effort/timeout in .env without restarting
 - **Message queue** — multiple messages in a thread wait in line (no collisions)
 - **Status check** — type `status` in any thread to see what Claude is doing
@@ -56,7 +57,19 @@ pip install -r requirements.txt          # Windows
 
 ### 2. Create a Slack app
 
-Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
+
+1. Select your workspace
+2. Switch to **JSON** tab
+3. Paste the contents of `slack-app-manifest.json` from this repo
+4. Click **Create** — all scopes, events, and settings are pre-configured
+5. **Install App** → copy the `xoxb-...` Bot Token
+6. **Settings → Socket Mode** → generate a token → copy the `xapp-...` App Token
+
+That's it — skip the manual scope/event setup below (the manifest handles it).
+
+<details>
+<summary>Manual setup (if you prefer not to use the manifest)</summary>
 
 #### Bot Token Scopes (OAuth & Permissions)
 
@@ -75,16 +88,16 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 | `reactions:write` | Add thinking indicator |
 | `users:read` | Get display names |
 
-> For Socket Mode only, you can skip `channels:history` and `channels:read`.
-
-#### Option A: Socket Mode (easier — no public URL)
+#### Option A: Socket Mode (recommended — no public URL, no domain needed)
 
 1. **Settings → Socket Mode** → toggle ON → generate token → copy `xapp-...` token
-2. **Event Subscriptions** → toggle ON → subscribe to: `app_mention`, `message.im`
+2. **Event Subscriptions** → toggle ON → subscribe to: `app_mention`, `message.channels`, `message.im`
 3. **App Home** → enable Messages Tab
 4. **Install App** → copy `xoxb-...` token
 
-#### Option B: Events API + Cloudflare (no @mention needed)
+@mention the bot once to start a thread. After that, all replies in the thread auto-trigger the bot — no @mention needed.
+
+#### Option B: Events API + Cloudflare (no @mention needed at all — even the first message)
 
 1. Install Cloudflare Tunnel:
    - Mac: `brew install cloudflare/cloudflare/cloudflared`
@@ -105,6 +118,8 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 5. Subscribe to: `app_mention`, `message.im`, `message.channels`
 6. **Basic Information** → copy Signing Secret
 7. **Install App** → copy `xoxb-...` token
+
+</details>
 
 ### 3. Configure
 
@@ -141,7 +156,7 @@ python bot.py     # Windows
 |---|---|
 | **DM the bot** | Find it in Direct Messages, just type |
 | **@mention in channel** | `/invite @ClaudeCode` then `@ClaudeCode your question` |
-| **Continue conversation** | Reply in the same thread — Claude remembers |
+| **Continue in thread** | Just reply in the thread — no @mention needed after the first one |
 | **Fresh start** | Start a new thread |
 | **Check progress** | Type `status` in the thread |
 | **Share a file** | Type `/share /path/to/file.ext` |
@@ -223,6 +238,35 @@ EOF
 # Load it
 launchctl load ~/Library/LaunchAgents/com.claude.slack.plist
 ```
+
+## Auto-Start on Boot (Windows)
+
+### Option A: Task Scheduler (no extra tools)
+
+1. Open **Task Scheduler** → Create Basic Task
+2. Name: `Claude Slack Bot`
+3. Trigger: **When I log on**
+4. Action: **Start a program**
+   - Program: `python`
+   - Arguments: `bot.py`
+   - Start in: `C:\path\to\claude-code-slack`
+5. Finish → right-click the task → **Properties**:
+   - Check "Run whether user is logged on or not"
+   - Check "Run with highest privileges"
+   - Conditions → uncheck "Start only if on AC power"
+
+### Option B: NSSM (run as a Windows Service)
+
+```powershell
+# Download NSSM from https://nssm.cc/download
+nssm install ClaudeSlackBot python bot.py
+nssm set ClaudeSlackBot AppDirectory C:\path\to\claude-code-slack
+nssm set ClaudeSlackBot AppStdout C:\path\to\claude-code-slack\bot.stdout.log
+nssm set ClaudeSlackBot AppStderr C:\path\to\claude-code-slack\bot.stderr.log
+nssm start ClaudeSlackBot
+```
+
+The service runs in the background with no terminal window and auto-restarts if it crashes.
 
 ## Cloudflare Named Tunnel Config
 
