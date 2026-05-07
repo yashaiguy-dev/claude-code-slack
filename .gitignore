@@ -10,6 +10,8 @@ stderr.log
 
 # Session data
 .sessions.json
+.recent_sessions.json
+.activated_threads.json
 
 # Python
 __pycache__/

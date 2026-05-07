@@ -20,144 +20,165 @@ Reply + tool calls + generated files appear in your Slack thread
 
 - **Agentic** — reads/writes files, runs commands, multi-step reasoning
 - **Thread memory** — each Slack thread = its own Claude session with full context
+- **Smart threads** — @mention once to start, then just reply — no @mention needed after that
 - **Tool mirroring** — see every file read, command run, grep search in Slack
 - **File upload/download** — attach files in Slack, Claude reads them. Generated files auto-upload back
-- **Two modes** — Socket Mode (recommended, easy) or Events API (Cloudflare tunnel)
-- **Smart threads** — @mention once to start, then just reply — bot auto-responds in activated threads
 - **Hot-reload config** — change model/effort/timeout in .env without restarting
 - **Message queue** — multiple messages in a thread wait in line (no collisions)
 - **Status check** — type `status` in any thread to see what Claude is doing
 - **Manual file share** — type `/share <path>` to upload any file to the thread
 - **Proactive messaging** — send messages via CLI: `python3 bot.py --send USER_ID "message"`
 - **Self-healing** — auto-repairs broken claude binary after updates
-- **Event dedup** — handles Slack retries gracefully
 - **Audit logging** — every interaction logged with user, timing, and session info
 - **Model selection** — use Opus, Sonnet, or Haiku via config
 
-## Quick Start
+---
 
-### 1. Install prerequisites
+## Setup (Step by Step)
 
+Follow these steps in order. Takes about 10 minutes.
+
+### Step 1: Install Node.js
+
+Claude Code CLI needs Node.js v18+.
+
+**Mac:**
 ```bash
-# Node.js (needed for Claude Code CLI)
-brew install node                        # Mac
-# Windows: download v22 LTS from https://nodejs.org
-
-# Claude Code CLI
-npm install -g @anthropic-ai/claude-code
-
-# Authenticate (pick one):
-claude auth login                        # Interactive login (Claude subscription)
-# OR set ANTHROPIC_API_KEY in your shell  # API key (pay-per-use)
-
-# Python dependencies
-pip3 install -r requirements.txt         # Mac
-pip install -r requirements.txt          # Windows
+brew install node
 ```
 
-### 2. Create a Slack app
+**Windows:**
+Download and install Node.js v22 LTS from https://nodejs.org
 
-Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
+Verify: `node --version` should print v18 or higher.
 
-1. Select your workspace
-2. Switch to **JSON** tab
-3. Paste the contents of `slack-app-manifest.json` from this repo
-4. Click **Create** — all scopes, events, and settings are pre-configured
-5. **Install App** → copy the `xoxb-...` Bot Token
-6. **Settings → Socket Mode** → generate a token → copy the `xapp-...` App Token
+### Step 2: Install Claude Code CLI
 
-That's it — skip the manual scope/event setup below (the manifest handles it).
+```bash
+npm install -g @anthropic-ai/claude-code
+```
 
-<details>
-<summary>Manual setup (if you prefer not to use the manifest)</summary>
+Then authenticate (pick one):
 
-#### Bot Token Scopes (OAuth & Permissions)
+```bash
+# Option A — Claude subscription (Pro/Team/Enterprise):
+claude auth login
 
-| Scope | Purpose |
-|---|---|
-| `app_mentions:read` | See @mentions |
-| `chat:write` | Send messages |
-| `channels:history` | Read channel messages (Events API mode) |
-| `channels:read` | See channel list (Events API mode) |
-| `files:read` | Download attached files |
-| `files:write` | Upload generated files |
-| `im:history` | Read DM history |
-| `im:read` | See DM channels |
-| `im:write` | Send DMs |
-| `reactions:read` | See reactions |
-| `reactions:write` | Add thinking indicator |
-| `users:read` | Get display names |
+# Option B — API key (pay-per-use):
+export ANTHROPIC_API_KEY=sk-ant-your-key    # Mac/Linux
+set ANTHROPIC_API_KEY=sk-ant-your-key       # Windows CMD
+$env:ANTHROPIC_API_KEY="sk-ant-your-key"    # Windows PowerShell
+```
 
-#### Option A: Socket Mode (recommended — no public URL, no domain needed)
+Verify: `claude --version` should print a version number.
 
-1. **Settings → Socket Mode** → toggle ON → generate token → copy `xapp-...` token
-2. **Event Subscriptions** → toggle ON → subscribe to: `app_mention`, `message.channels`, `message.im`
-3. **App Home** → enable Messages Tab
-4. **Install App** → copy `xoxb-...` token
+### Step 3: Install Python
 
-@mention the bot once to start a thread. After that, all replies in the thread auto-trigger the bot — no @mention needed.
+You need Python 3.9+.
 
-#### Option B: Events API + Cloudflare (no @mention needed at all — even the first message)
+**Mac:** Python 3 comes pre-installed. Verify with `python3 --version`.
 
-1. Install Cloudflare Tunnel:
-   - Mac: `brew install cloudflare/cloudflare/cloudflared`
-   - Windows: [download MSI](https://github.com/cloudflare/cloudflared/releases/latest)
-2. **Quick tunnel** (free, temporary URL):
-   ```bash
-   cloudflared tunnel --url http://localhost:3456
-   ```
-3. **Named tunnel** (permanent domain — recommended):
-   ```bash
-   cloudflared tunnel login
-   cloudflared tunnel create claude-bot
-   # Add DNS record for your subdomain in Cloudflare dashboard
-   # Create ~/.cloudflared/config.yml (see below)
-   cloudflared tunnel run claude-bot
-   ```
-4. **Event Subscriptions** → Request URL: `https://your-domain.com/slack/events`
-5. Subscribe to: `app_mention`, `message.im`, `message.channels`
-6. **Basic Information** → copy Signing Secret
-7. **Install App** → copy `xoxb-...` token
+**Windows:** Download from https://python.org/downloads — check "Add to PATH" during install. Verify with `python --version`.
 
-</details>
+### Step 4: Clone this repo
 
-### 3. Configure
+```bash
+git clone https://github.com/yashaiguy-dev/claude-code-slack.git
+cd claude-code-slack
+```
+
+### Step 5: Install Python dependencies
+
+```bash
+pip3 install -r requirements.txt    # Mac
+pip install -r requirements.txt     # Windows
+```
+
+### Step 6: Create the Slack app (1 minute)
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** → **From an app manifest**
+3. Select your Slack workspace
+4. Switch to the **JSON** tab
+5. Paste the contents of `slack-app-manifest.json` from this repo
+6. Click **Next** → **Create**
+
+All scopes, events, and Socket Mode are pre-configured by the manifest. No manual setup needed.
+
+### Step 7: Get your tokens (2 tokens needed)
+
+**Token 1 — Bot Token:**
+1. In your Slack app settings, go to **OAuth & Permissions** (left sidebar)
+2. Click **Install to Workspace** → **Allow**
+3. Copy the **Bot User OAuth Token** — starts with `xoxb-`
+
+**Token 2 — App Token:**
+1. Go to **Settings → Basic Information** (left sidebar)
+2. Scroll down to **App-Level Tokens**
+3. Click **Generate Token and Scopes**
+4. Name it anything (e.g. `socket-token`)
+5. Add the scope `connections:write`
+6. Click **Generate** → copy the token — starts with `xapp-`
+
+### Step 8: Configure the bot
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your tokens:
+Open `.env` in any text editor. Replace the placeholder values:
 
-**Socket Mode:**
 ```
-SLACK_BOT_TOKEN=xoxb-your-token
-SLACK_APP_TOKEN=xapp-your-token
+SLACK_BOT_TOKEN=xoxb-paste-your-bot-token-here
+SLACK_APP_TOKEN=xapp-paste-your-app-token-here
 PROJECT_DIR=~/my-projects
 ```
 
-**Events API:**
+`PROJECT_DIR` is the folder Claude will work in — it can read/write files there.
+
+### Step 9: Invite the bot to a channel
+
+In Slack, go to any channel and type:
 ```
-SLACK_BOT_TOKEN=xoxb-your-token
-SLACK_SIGNING_SECRET=your-signing-secret
-PROJECT_DIR=~/my-projects
+/invite @Claude Code
 ```
 
-### 4. Run
+### Step 10: Run the bot
 
 ```bash
 python3 bot.py    # Mac
 python bot.py     # Windows
 ```
 
+You should see:
+```
+============================================================
+  Claude Code Slack Bot
+============================================================
+  Project dir:  /Users/you/my-projects
+  Mode:         Socket Mode
+  ...
+  Bot is running! Send a message in Slack.
+```
+
+### Step 11: Test it
+
+1. **DM test:** Find "Claude Code" in Direct Messages → type "hello"
+2. **Channel test:** In the channel you invited it to, type `@Claude Code what time is it?`
+3. **Thread test:** Reply to the bot's response in the thread — just type normally, no @mention needed
+
+If the bot responds, you're done!
+
+---
+
 ## Usage
 
 | Action | How |
 |---|---|
 | **DM the bot** | Find it in Direct Messages, just type |
-| **@mention in channel** | `/invite @ClaudeCode` then `@ClaudeCode your question` |
-| **Continue in thread** | Just reply in the thread — no @mention needed after the first one |
-| **Fresh start** | Start a new thread |
+| **Start in a channel** | `@Claude Code your question` — starts a thread |
+| **Continue in thread** | Just reply — no @mention needed after the first one |
+| **Fresh start** | Start a new thread (or DM) |
 | **Check progress** | Type `status` in the thread |
 | **Share a file** | Type `/share /path/to/file.ext` |
 | **Attach a file** | Drag-and-drop a file into the message |
@@ -166,7 +187,7 @@ python bot.py     # Windows
 
 ## What it looks like
 
-When `MIRROR_TOOLS_TO_SLACK=true`, you see Claude's thought process:
+When `MIRROR_TOOLS_TO_SLACK=true` (default), you see Claude's thought process:
 
 ```
 You:     Fix the bug in auth.py
@@ -176,13 +197,16 @@ Claude:  🔧 Edit — /app/auth.py  [old_token = ...]
 Claude:  Fixed the authentication bug. The issue was...
 ```
 
+---
+
 ## Configuration
+
+All settings go in `.env`. The `CLAUDE_*` settings are **hot-reloadable** — edit while the bot is running, changes take effect on the next message.
 
 | Setting | Default | Description |
 |---|---|---|
 | `SLACK_BOT_TOKEN` | required | Bot token (`xoxb-...`) |
-| `SLACK_APP_TOKEN` | — | Socket Mode token (`xapp-...`) |
-| `SLACK_SIGNING_SECRET` | — | Events API signing secret |
+| `SLACK_APP_TOKEN` | required | Socket Mode token (`xapp-...`) |
 | `PROJECT_DIR` | `~/claude-workspace` | Directory Claude operates in |
 | `CLAUDE_TIMEOUT` | `1800` | Max seconds per request (30 min) |
 | `CLAUDE_MODEL` | (default) | Model: `sonnet`, `opus`, `haiku`, or full ID |
@@ -190,17 +214,17 @@ Claude:  Fixed the authentication bug. The issue was...
 | `CLAUDE_PERMISSION_MODE` | `bypassPermissions` | Permission mode for tool calls |
 | `MIRROR_TOOLS_TO_SLACK` | `true` | Show tool calls in Slack |
 | `SESSION_RECENT_WINDOW` | `600` | Seconds to reuse session in same channel |
-| `AUTHORIZED_USERS` | (all) | Comma-separated Slack user IDs |
-| `PORT` | `3456` | Web server port (Events API only) |
+| `AUTHORIZED_USERS` | (all) | Comma-separated Slack user IDs to restrict access |
 
-All `CLAUDE_*` settings are **hot-reloadable** — edit `.env` while the bot is running, changes take effect on the next message.
+---
 
-## Auto-Start on Boot (Mac)
+## Run in Background (auto-start on boot)
 
-Create a launchd plist to run the bot automatically:
+You probably don't want to keep a terminal open. Here's how to run the bot automatically.
+
+### Mac — launchd
 
 ```bash
-# Create the plist
 cat > ~/Library/LaunchAgents/com.claude.slack.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -234,14 +258,17 @@ cat > ~/Library/LaunchAgents/com.claude.slack.plist << 'EOF'
 </dict>
 </plist>
 EOF
+```
 
-# Load it
+Replace `/path/to/claude-code-slack` with your actual path, then:
+
+```bash
 launchctl load ~/Library/LaunchAgents/com.claude.slack.plist
 ```
 
-## Auto-Start on Boot (Windows)
+The bot now starts automatically on login and restarts if it crashes.
 
-### Option A: Task Scheduler (no extra tools)
+### Windows — Task Scheduler
 
 1. Open **Task Scheduler** → Create Basic Task
 2. Name: `Claude Slack Bot`
@@ -255,7 +282,7 @@ launchctl load ~/Library/LaunchAgents/com.claude.slack.plist
    - Check "Run with highest privileges"
    - Conditions → uncheck "Start only if on AC power"
 
-### Option B: NSSM (run as a Windows Service)
+### Windows — NSSM (runs as a service, no terminal window)
 
 ```powershell
 # Download NSSM from https://nssm.cc/download
@@ -266,35 +293,85 @@ nssm set ClaudeSlackBot AppStderr C:\path\to\claude-code-slack\bot.stderr.log
 nssm start ClaudeSlackBot
 ```
 
-The service runs in the background with no terminal window and auto-restarts if it crashes.
+The service runs silently in the background and auto-restarts if it crashes.
 
-## Cloudflare Named Tunnel Config
-
-For a permanent domain, create `~/.cloudflared/config.yml`:
-
-```yaml
-tunnel: YOUR-TUNNEL-ID
-credentials-file: /path/to/.cloudflared/YOUR-TUNNEL-ID.json
-
-ingress:
-  - hostname: claude-bot.yourdomain.com
-    service: http://localhost:3456
-  - service: http_status:404
-```
+---
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | `claude: command not found` | `npm install -g @anthropic-ai/claude-code` then restart terminal |
+| `node: command not found` | Install Node.js (Step 1) |
 | Not authenticated | Run `claude auth login` in terminal |
-| Bot doesn't respond to DMs | App Home → enable Messages Tab |
-| Bot doesn't respond in channels | `/invite @ClaudeCode` first |
+| Bot doesn't respond to DMs | Go to your Slack app → App Home → enable **Messages Tab** |
+| Bot doesn't respond in channels | Type `/invite @Claude Code` in the channel first |
+| Thread replies not working | Make sure the first message in the thread @mentioned the bot |
 | Timeout on long tasks | Increase `CLAUDE_TIMEOUT=3600` in `.env` |
-| Port already in use | Change `PORT=3457` in `.env` |
-| Tool calls not showing | Set `MIRROR_TOOLS_TO_SLACK=true` |
+| Port already in use | This only applies to Events API mode — Socket Mode doesn't use a port |
+| Tool calls not showing | Set `MIRROR_TOOLS_TO_SLACK=true` in `.env` |
 | Duplicate responses | Bot handles retries — check `X-Slack-Retry-Num` in logs |
 | Broken CLI after update | Bot self-repairs automatically, or run `npm install -g @anthropic-ai/claude-code` |
+
+---
+
+<details>
+<summary>Advanced: Events API mode (Cloudflare tunnel — no @mention needed at all)</summary>
+
+If you want the bot to respond to every message in its channels without any @mention (not even the first one), you can use Events API mode instead of Socket Mode. This requires a Cloudflare tunnel to give Slack a public URL to send events to.
+
+### Setup
+
+1. Install Cloudflare Tunnel:
+   - Mac: `brew install cloudflare/cloudflare/cloudflared`
+   - Windows: download from https://github.com/cloudflare/cloudflared/releases/latest
+
+2. Create a tunnel:
+   ```bash
+   # Quick tunnel (free, temporary URL — good for testing):
+   cloudflared tunnel --url http://localhost:3456
+
+   # Named tunnel (permanent domain — for production):
+   cloudflared tunnel login
+   cloudflared tunnel create claude-bot
+   cloudflared tunnel run claude-bot
+   ```
+
+3. In your Slack app settings:
+   - **Event Subscriptions** → Request URL: `https://your-tunnel-domain/slack/events`
+   - Subscribe to: `app_mention`, `message.im`, `message.channels`
+   - **Basic Information** → copy the **Signing Secret**
+
+4. Update `.env`:
+   ```
+   SLACK_BOT_TOKEN=xoxb-your-token
+   SLACK_SIGNING_SECRET=your-signing-secret
+   # Remove or comment out SLACK_APP_TOKEN — it's not needed for Events API
+   ```
+
+5. For a permanent tunnel, create `~/.cloudflared/config.yml`:
+   ```yaml
+   tunnel: YOUR-TUNNEL-ID
+   credentials-file: /path/to/.cloudflared/YOUR-TUNNEL-ID.json
+
+   ingress:
+     - hostname: claude-bot.yourdomain.com
+       service: http://localhost:3456
+     - service: http_status:404
+   ```
+
+### When to use Events API vs Socket Mode
+
+| | Socket Mode | Events API |
+|---|---|---|
+| Setup | Easy (no domain needed) | Harder (needs Cloudflare tunnel) |
+| @mention | Once to start thread, then just reply | Never needed |
+| Public URL | Not needed | Required |
+| Best for | Most users | Always-listening in all channels |
+
+</details>
+
+---
 
 ## License
 
